@@ -1,0 +1,295 @@
+// This is your Prisma schema file
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────
+// ENUMS
+// ─────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  EDITOR
+  SOURCER
+  VIEWER
+}
+
+enum GmailStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum ChannelStatus {
+  ACTIVE
+  LIMITED
+  SUSPENDED
+  INACTIVE
+}
+
+enum PipelineStep {
+  SOURCING
+  APPROVAL
+  PROCESSING
+  WAITING_UPLOAD
+  UPLOADING
+  DONE
+  FAILED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum SourceType {
+  YOUTUBE
+  TIKTOK
+  FACEBOOK
+  OTHER
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum EntityType {
+  JOB
+  CHANNEL
+  GMAIL
+  USER
+  TEAM
+  SOURCE
+  WORKER
+}
+
+// ─────────────────────────────
+// USER & AUTH
+// ─────────────────────────────
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  name        String
+  avatar      String?
+  role        Role     @default(SOURCER)
+  isActive    Boolean  @default(true)
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  managedTeams   Team[]        @relation("TeamManager")
+  assignedJobs   VideoJob[]    @relation("JobAssignee")
+  addedSources   VideoSource[] @relation("SourceAdder")
+  activityLogs   ActivityLog[] @relation("LogUser")
+}
+
+// ─────────────────────────────
+// TEAM
+// ─────────────────────────────
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  managerId   String?
+  manager     User?    @relation("TeamManager", fields: [managerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members      User[]
+  gmailAccounts GmailAccount[]
+  channels     YouTubeChannel[]
+  videoJobs    VideoJob[]
+  sources      VideoSource[]
+}
+
+// ─────────────────────────────
+// GMAIL ACCOUNT
+// ─────────────────────────────
+
+model GmailAccount {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  passwordEnc   String
+  recoveryEmail String?
+  phone         String?
+  backupCodes   String?
+  status        GmailStatus @default(ACTIVE)
+  notes         String?
+  teamId        String?
+  team          Team?       @relation(fields: [teamId], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  channels      YouTubeChannel[]
+}
+
+// ─────────────────────────────
+// YOUTUBE CHANNEL
+// ─────────────────────────────
+
+model YouTubeChannel {
+  id           String        @id @default(cuid())
+  name         String
+  channelUrl   String?
+  channelId    String?       // YouTube channel ID (UCxxxxxx)
+  thumbnailUrl String?
+  gmailId      String?
+  gmail        GmailAccount? @relation(fields: [gmailId], references: [id])
+  teamId       String?
+  team         Team?         @relation(fields: [teamId], references: [id])
+  status       ChannelStatus @default(ACTIVE)
+  subscribers  Int?
+  language     String?       @default("vi")
+  niche        String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  targetJobs   VideoJob[]    @relation("JobTargetChannel")
+  uploadedJobs VideoJob[]    @relation("JobUploadedChannel")
+}
+
+// ─────────────────────────────
+// VIDEO SOURCE
+// ─────────────────────────────
+
+model VideoSource {
+  id           String     @id @default(cuid())
+  sourceUrl    String
+  sourceType   SourceType @default(YOUTUBE)
+  platform     String?
+  title        String?
+  duration     String?
+  thumbnailUrl String?
+  description  String?
+  addedById    String?
+  addedBy      User?      @relation("SourceAdder", fields: [addedById], references: [id])
+  teamId       String?
+  team         Team?      @relation(fields: [teamId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  // Relations
+  jobs         VideoJob[]
+}
+
+// ─────────────────────────────
+// VIDEO JOB (PIPELINE)
+// ─────────────────────────────
+
+model VideoJob {
+  id                String       @id @default(cuid())
+  videoSourceId     String?
+  videoSource       VideoSource? @relation(fields: [videoSourceId], references: [id])
+  sourceUrl         String       // direct URL (denormalized for speed)
+  title             String?
+  targetChannelId   String?
+  targetChannel     YouTubeChannel? @relation("JobTargetChannel", fields: [targetChannelId], references: [id])
+  uploadedChannelId String?
+  uploadedChannel   YouTubeChannel? @relation("JobUploadedChannel", fields: [uploadedChannelId], references: [id])
+  uploadedUrl       String?
+  assignedToId      String?
+  assignedTo        User?        @relation("JobAssignee", fields: [assignedToId], references: [id])
+  teamId            String?
+  team              Team?        @relation(fields: [teamId], references: [id])
+  currentStep       PipelineStep @default(SOURCING)
+  priority          Priority     @default(NORMAL)
+  progress          Int          @default(0)  // 0-100 percentage
+  notes             String?
+  errorMessage      String?
+  outputPath        String?      // path/URL to rendered video
+  subtitlesPath     String?
+  targetLanguage    String?      @default("vi")
+  aiTitle           String?
+  aiDescription     String?
+  aiTags            String?
+  lockedBy          String?      // Worker ID currently processing
+  lockedAt          DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  // Relations
+  jobLogs      JobLog[]
+}
+
+// ─────────────────────────────
+// JOB LOG
+// ─────────────────────────────
+
+model JobLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       VideoJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  step      String?
+  message   String
+  level     LogLevel @default(INFO)
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────
+// WORKER TOKEN
+// ─────────────────────────────
+
+model WorkerToken {
+  id           String    @id @default(cuid())
+  name         String
+  tokenHash    String    @unique
+  isActive     Boolean   @default(true)
+  lastSeen     DateTime?
+  ipAddress    String?
+  currentJobId String?
+  createdAt    DateTime  @default(now())
+}
+
+// ─────────────────────────────
+// ACTIVITY LOG
+// ─────────────────────────────
+
+model ActivityLog {
+  id         String     @id @default(cuid())
+  userId     String?
+  user       User?      @relation("LogUser", fields: [userId], references: [id])
+  action     String
+  entityType EntityType?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime   @default(now())
+}
+
+// ─────────────────────────────
+// SYSTEM SETTINGS
+// ─────────────────────────────
+
+model SystemSetting {
+  key         String   @id          // e.g. "auto_approve_pipeline"
+  value       String                // stored as string, cast on read
+  type        String   @default("boolean") // "boolean" | "string" | "number"
+  label       String                // Human-readable label
+  description String?               // Description for admin UI
+  group       String   @default("general") // Group for UI organization
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}
+
