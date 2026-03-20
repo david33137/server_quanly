@@ -24,6 +24,7 @@ import jobRoutes from './routes/jobRoutes.js';
 import workerRoutes from './routes/workerRoutes.js';
 import logRoutes from './routes/logRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
+import languageRoutes from './routes/languageRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3031;
@@ -52,6 +53,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/worker', workerRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/languages', languageRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

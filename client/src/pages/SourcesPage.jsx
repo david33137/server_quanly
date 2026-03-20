@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { sourceAPI, jobAPI, channelAPI } from '../api/index.js';
+import { sourceAPI, jobAPI, channelAPI, languageAPI } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, X, Link, GitBranch, ExternalLink, Zap } from 'lucide-react';
@@ -47,7 +47,7 @@ function PipelineStatus({ jobs }) {
 }
 
 // ─── Add Source Modal (với tuỳ chọn pipeline) ─────────────────────
-function AddSourceModal({ channels, onClose, onSaved }) {
+function AddSourceModal({ channels, languages, onClose, onSaved }) {
   const [urls, setUrls]                 = useState('');
   const [sourceType, setSourceType]     = useState('YOUTUBE');
   const [addToPipeline, setAddToPipeline] = useState(false);
@@ -76,7 +76,7 @@ function AddSourceModal({ channels, onClose, onSaved }) {
       } else {
         await sourceAPI.bulkCreate(
           urlList.map(u => ({ sourceUrl: u, sourceType })),
-          addToPipeline ? { addToPipeline: true, targetChannelId: channelId || null, priority } : {}
+          { addToPipeline, targetChannelId: channelId || null, priority }
         );
         toast.success(`Đã thêm ${urlList.length} nguồn${addToPipeline ? ' vào Pipeline' : ''}`);
       }
@@ -178,10 +178,9 @@ function AddSourceModal({ channels, onClose, onSaved }) {
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Ngôn ngữ đích</label>
                     <select className="form-control" value={targetLang} onChange={e => setTargetLang(e.target.value)}>
-                      <option value="vi">🇻🇳 Tiếng Việt</option>
-                      <option value="en">🇺🇸 English</option>
-                      <option value="th">🇹🇭 Thai</option>
-                      <option value="id">🇮🇩 Indonesian</option>
+                      {languages.filter(l => l.isActive).map(l => (
+                        <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -202,7 +201,7 @@ function AddSourceModal({ channels, onClose, onSaved }) {
 }
 
 // ─── Add To Pipeline Modal (từ row có sẵn) ─────────────────────────
-function AddToPipelineModal({ source, channels, onClose, onDone }) {
+function AddToPipelineModal({ source, channels, languages, onClose, onDone }) {
   const [channelId, setChannelId] = useState('');
   const [priority, setPriority]   = useState('NORMAL');
   const [lang, setLang]           = useState('vi');
@@ -274,10 +273,9 @@ function AddToPipelineModal({ source, channels, onClose, onDone }) {
               <div className="form-group">
                 <label className="form-label">Ngôn ngữ đích</label>
                 <select className="form-control" value={lang} onChange={e => setLang(e.target.value)}>
-                  <option value="vi">🇻🇳 Tiếng Việt</option>
-                  <option value="en">🇺🇸 English</option>
-                  <option value="th">🇹🇭 Thai</option>
-                  <option value="id">🇮🇩 Indonesian</option>
+                  {languages.filter(l => l.isActive).map(l => (
+                    <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -308,6 +306,7 @@ export default function SourcesPage() {
   const { isAtLeast } = useAuth();
   const [sources, setSources]           = useState([]);
   const [channels, setChannels]         = useState([]);
+  const [languages, setLanguages]       = useState([]);
   const [loading, setLoading]           = useState(true);
   const [showModal, setShowModal]       = useState(false);
   const [pipelineSource, setPipelineSource] = useState(null);
@@ -318,13 +317,15 @@ export default function SourcesPage() {
   const fetchSources = useCallback(async () => {
     setLoading(true);
     try {
-      const [sr, cr] = await Promise.all([
+      const [sr, cr, lr] = await Promise.all([
         sourceAPI.getAll({ search: search || undefined, sourceType: filterType || undefined }),
         channelAPI.getAll(),
+        languageAPI.getAll(),
       ]);
       setSources(sr.data.sources);
       setChannels(cr.data.channels);
-    } catch (err) { toast.error('Lỗi tải nguồn'); }
+      setLanguages(lr.data.languages || []);
+    } catch (err) { toast.error('Lỗi tải dữ liệu'); }
     setLoading(false);
   }, [search, filterType]);
 
@@ -383,9 +384,6 @@ export default function SourcesPage() {
           <option value="active">🔄 Đang xử lý</option>
           <option value="done">✅ Đã hoàn thành</option>
         </select>
-        <span className="text-xs text-muted" style={{ alignSelf: 'center', marginLeft: 4 }}>
-          {displayed.length}/{sources.length} nguồn
-        </span>
       </div>
 
       <div className="page-content" style={{ paddingTop: 0 }}>
@@ -474,6 +472,7 @@ export default function SourcesPage() {
       {showModal && (
         <AddSourceModal
           channels={channels}
+          languages={languages}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); fetchSources(); }}
         />
@@ -482,6 +481,7 @@ export default function SourcesPage() {
         <AddToPipelineModal
           source={pipelineSource}
           channels={channels}
+          languages={languages}
           onClose={() => setPipelineSource(null)}
           onDone={fetchSources}
         />

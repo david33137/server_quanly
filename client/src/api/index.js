@@ -116,4 +116,12 @@ export const settingsAPI = {
   bulkUpdate: (settings) => api.patch('/settings/bulk', { settings }),
 };
 
+// ─── Target Languages ─────────────────────────────
+export const languageAPI = {
+  getAll: () => api.get('/languages'),
+  create: (data) => api.post('/languages', data),
+  update: (id, data) => api.patch(`/languages/${id}`, data),
+  delete: (id) => api.delete(`/languages/${id}`),
+};
+
 export default api;

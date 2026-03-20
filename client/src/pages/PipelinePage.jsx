@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { jobAPI, channelAPI, sourceAPI, logAPI, authAPI } from '../api/index.js';
+import { jobAPI, channelAPI, sourceAPI, logAPI, authAPI, languageAPI } from '../api/index.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import toast from 'react-hot-toast';
-import { Plus, RefreshCw, X, GripVertical, ExternalLink, Clock, Youtube } from 'lucide-react';
+import { Plus, RefreshCw, X, GripVertical, ExternalLink, Clock, Youtube, Globe } from 'lucide-react';
 
 // ─── Config ──────────────────────────────────────────────────────
 const STEPS = [
@@ -111,7 +111,7 @@ function FailForm({ job, onDone }) {
 }
 
 // ─── Job Edit Form ────────────────────────────────────────────────
-function JobEditForm({ job, channels, users, onSaved }) {
+function JobEditForm({ job, channels, users, languages, onSaved }) {
   const [form, setForm] = useState({
     title:           job.title || '',
     sourceUrl:       job.sourceUrl || '',
@@ -166,13 +166,9 @@ function JobEditForm({ job, channels, users, onSaved }) {
           <div>
             <label className="form-label">Ngôn ngữ đích</label>
             <select className="form-control" value={form.targetLanguage} onChange={set('targetLanguage')}>
-              <option value="vi">🇻🇳 Tiếng Việt</option>
-              <option value="en">🇺🇸 English</option>
-              <option value="th">🇹🇭 Thai</option>
-              <option value="id">🇮🇩 Indonesian</option>
-              <option value="zh">🇨🇳 Chinese</option>
-              <option value="ko">🇰🇷 Korean</option>
-              <option value="ja">🇯🇵 Japanese</option>
+              {languages.filter(l => l.isActive).map(l => (
+                <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -210,7 +206,7 @@ function JobEditForm({ job, channels, users, onSaved }) {
 }
 
 // ─── Job Detail Drawer ────────────────────────────────────────────
-function JobDetailDrawer({ job: initialJob, channels, onClose, onUpdated }) {
+function JobDetailDrawer({ job: initialJob, channels, languages, onClose, onUpdated }) {
   const { isAtLeast, user: currentUser } = useAuth();
   const [job, setJob]   = useState(initialJob);
   const [logs, setLogs] = useState([]);
@@ -273,7 +269,11 @@ function JobDetailDrawer({ job: initialJob, channels, onClose, onUpdated }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: step.color }}>{step.emoji} {step.label}</span>
             {job.videoSource && <span className={`badge ${SOURCE_BADGE[job.videoSource.sourceType]}`}>{job.videoSource.sourceType}</span>}
-            {job.targetLanguage && <span className="badge badge-gray">🌐 {job.targetLanguage.toUpperCase()}</span>}
+            {job.targetLanguage && (
+              <span className="badge badge-gray" title={languages.find(l => l.code === job.targetLanguage)?.name}>
+                <Globe size={10} style={{ marginRight: 4 }}/> {job.targetLanguage.toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
 
@@ -345,6 +345,7 @@ function JobDetailDrawer({ job: initialJob, channels, onClose, onUpdated }) {
                 {[
                   { label: 'Kênh đích',      value: job.targetChannel?.name },
                   { label: 'Kênh đã upload', value: job.uploadedChannel?.name },
+                  { label: 'Ngôn ngữ đích',  value: languages.find(l => l.code === job.targetLanguage)?.name || job.targetLanguage },
                   { label: 'Giao cho',       value: job.assignedTo?.name },
                   { label: 'Team',           value: job.team?.name },
                   { label: 'Nguồn',          value: job.videoSource?.sourceType },
@@ -408,8 +409,8 @@ function JobDetailDrawer({ job: initialJob, channels, onClose, onUpdated }) {
 
           {/* ── CHỈNH SỬA ── */}
           {tab === 'edit' && (
-            <JobEditForm job={job} channels={availableChannels} users={users}
-              onSaved={() => { reload(); onUpdated(); toast.success('✅ Đã lưu thay đổi'); }} />
+            <JobEditForm job={job} channels={availableChannels} users={users} languages={languages}
+              onSaved={() => { reload(); onUpdated(); setTab('overview'); toast.success('✅ Đã lưu thay đổi'); }} />
           )}
 
           {/* ── LỊCH SỬ ── */}
@@ -559,7 +560,7 @@ function TransitionModal({ job, fromStep, toStep, channels, onClose, onDone }) {
 }
 
 // ─── New Job Modal ────────────────────────────────────────────────
-function NewJobModal({ channels, onClose, onCreated }) {
+function NewJobModal({ channels, languages, onClose, onCreated }) {
   const [mode, setMode] = useState('url');
   const [urls, setUrls] = useState('');
   const [sources, setSources] = useState([]);
@@ -672,10 +673,9 @@ function NewJobModal({ channels, onClose, onCreated }) {
               <div className="form-group">
                 <label className="form-label">Ngôn ngữ đích</label>
                 <select id="job-lang" className="form-control" value={lang} onChange={e => setLang(e.target.value)}>
-                  <option value="vi">Tiếng Việt</option>
-                  <option value="en">English</option>
-                  <option value="th">Thai</option>
-                  <option value="id">Indonesian</option>
+                  {languages.filter(l => l.isActive).map(l => (
+                    <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -809,6 +809,7 @@ export default function PipelinePage() {
   const { isAtLeast } = useAuth();
   const [jobs,     setJobs]     = useState([]);
   const [channels, setChannels] = useState([]);
+  const [languages, setLanguages] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [showNewJob, setShowNewJob] = useState(false);
   const [dragOver, setDragOver] = useState(null);
@@ -818,9 +819,14 @@ export default function PipelinePage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [jobRes, chRes] = await Promise.all([jobAPI.getAll({ limit: 200 }), channelAPI.getAll()]);
+      const [jobRes, chRes, langRes] = await Promise.all([
+        jobAPI.getAll({ limit: 200 }),
+        channelAPI.getAll(),
+        languageAPI.getAll()
+      ]);
       setJobs(jobRes.data.jobs);
       setChannels(chRes.data.channels);
+      setLanguages(langRes.data.languages || []);
     } catch { toast.error('Lỗi tải dữ liệu'); }
     setLoading(false);
   }, []);
@@ -879,14 +885,14 @@ export default function PipelinePage() {
         )}
       </div>
 
-      {showNewJob && <NewJobModal channels={channels} onClose={() => setShowNewJob(false)} onCreated={fetchAll} />}
+      {showNewJob && <NewJobModal channels={channels} languages={languages} onClose={() => setShowNewJob(false)} onCreated={fetchAll} />}
       {pendingTransition && (
         <TransitionModal job={pendingTransition.job} fromStep={pendingTransition.fromStep}
           toStep={pendingTransition.toStep} channels={channels}
           onClose={() => setPendingTransition(null)} onDone={fetchAll} />
       )}
       {detailJob && (
-        <JobDetailDrawer job={detailJob} channels={channels}
+        <JobDetailDrawer job={detailJob} channels={channels} languages={languages}
           onClose={() => setDetailJob(null)} onUpdated={fetchAll} />
       )}
     </div>

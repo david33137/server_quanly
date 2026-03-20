@@ -293,3 +293,16 @@ model SystemSetting {
   updatedById String?
 }
 
+// ─────────────────────────────
+// TARGET LANGUAGES
+// ─────────────────────────────
+
+model TargetLanguage {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. "vi", "en", "th"
+  name      String           // e.g. "Tiếng Việt", "English"
+  flag      String?          // e.g. "🇻🇳", "🇺🇸"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
